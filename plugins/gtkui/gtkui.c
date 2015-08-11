@@ -30,6 +30,7 @@
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
+#include "appindicator.h"
 #include "../../gettext.h"
 #include "gtkui.h"
 #include "ddblistview.h"
@@ -63,13 +64,19 @@
 #define trace(...) { fprintf(stderr, __VA_ARGS__); }
 //#define trace(fmt,...)
 
+#define min(x,y) ((x)<(y)?(x):(y))
+
 static ddb_gtkui_t plugin;
 DB_functions_t *deadbeef;
 
 // main widgets
 GtkWidget *mainwin;
 GtkWidget *searchwin;
+#ifdef USE_APPINDICATOR
+AppIndicator *trayicon;
+#else
 GtkStatusIcon *trayicon;
+#endif
 GtkWidget *traymenu;
 
 static int gtkui_accept_messages = 0;
@@ -236,14 +243,13 @@ update_songinfo (gpointer ctx) {
     return FALSE;
 }
 
+static gboolean gtkui_is_status_icon_allocated(void);
+void gtkui_set_status_icon_tooltip(const char *text);
+
 void
 set_tray_tooltip (const char *text) {
-    if (trayicon) {
-#if !GTK_CHECK_VERSION(2,16,0)
-        gtk_status_icon_set_tooltip (trayicon, text);
-#else
-        gtk_status_icon_set_tooltip_text (trayicon, text);
-#endif
+    if (gtkui_is_status_icon_allocated()) {
+        gtkui_set_status_icon_tooltip(text);
     }
 }
 
@@ -325,6 +331,7 @@ on_trayicon_button_press_event (GtkWidget       *widget,
 }
 #endif
 
+#ifndef USE_APPINDICATOR
 gboolean
 on_trayicon_popup_menu (GtkWidget       *widget,
         guint button,
@@ -334,6 +341,7 @@ on_trayicon_popup_menu (GtkWidget       *widget,
     gtk_menu_popup (GTK_MENU (traymenu), NULL, NULL, gtk_status_icon_position_menu, trayicon, button, time);
     return FALSE;
 }
+#endif
 
 static gboolean
 activate_cb (gpointer nothing) {
@@ -507,23 +515,257 @@ gtkui_on_frameupdate (gpointer data) {
     return TRUE;
 }
 
+//Appindicator functions
+#ifdef USE_APPINDICATOR
+
+static gboolean
+gtkui_is_status_icon_allocated(void) {
+    return trayicon != NULL ? TRUE : FALSE;
+}
+
+void gtkui_set_status_icon_visible(gboolean visible) {
+    AppIndicatorStatus status =
+            (visible == FALSE) ? APP_INDICATOR_STATUS_PASSIVE : APP_INDICATOR_STATUS_ACTIVE;
+    app_indicator_set_status (trayicon,status);
+}
+
+void
+void gtkui_initialize_status_icon(void) {
+    app_indicator_set_status(trayicon, APP_INDICATOR_STATUS_ACTIVE);
+    app_indicator_set_attention_icon(trayicon, "dialog-warning");
+    app_indicator_set_menu (trayicon, GTK_MENU(traymenu));
+    //printf ("connecting button tray signals\n");
+
+    //libappindicator does not trigger scroll-event for applications
+    //libappindicator does not trigger activate events
+#endif
+}
+
+void split_namedir(const char *path, char *dir, int dirsize, char *name, int namesize) {
+    const char *st = strrchr(path,'/');
+    if (!st) {
+        st = path;
+    }
+    const char *en = strrchr(st,'.');
+    if (!en) {
+        en = st+strlen(st);
+    }
+    int dlen = min(st-path,dirsize);
+    strncpy(dir,path,dlen);
+    dir[dlen]=0;
+    if (*st=='/') {
+        st++;
+    }
+    int nlen = min(en-st,namesize);
+    strncpy(name,st,nlen);
+    name[nlen]=0;
+}
+
+void gtkui_create_status_icon_from_file(const char * iconfile) {
+    char iconpath[PATH_MAX];
+    char icon_name[PATH_MAX];
+    split_namedir(iconfile,iconpath,sizeof(iconpath),icon_name,sizeof(icon_name));
+
+    trayicon = app_indicator_new_with_path("deadbeef-indicator", icon_name, APP_INDICATOR_CATEGORY_APPLICATION_STATUS, iconpath);
+    gtkui_initialize_status_icon();
+}
+
+void gtkui_create_status_icon_from_icon_name(const char * icon_name) {
+    trayicon = app_indicator_new("deadbeef-indicator", icon_name, APP_INDICATOR_CATEGORY_APPLICATION_STATUS);
+    gtkui_initialize_status_icon();
+}
+
+void gtkui_set_status_icon_tooltip(const char *text) {
+    const gchar *icon_name = app_indicator_get_icon(trayicon);
+    app_indicator_set_icon_full(trayicon,icon_name,text);
+}
+
+//This version uses generic icon names instead of gtk-specific ones
+GtkWidget*
+gtkui_create_status_menu (void) {
+    GtkWidget *menu;
+    GtkWidget *stop2;
+    GtkWidget *image59;
+    GtkWidget *play2;
+    GtkWidget *image60;
+    GtkWidget *pause2;
+    GtkWidget *image61;
+    GtkWidget *previous2;
+    GtkWidget *image62;
+    GtkWidget *next2;
+    GtkWidget *image63;
+    GtkWidget *play_random1;
+    GtkWidget *separator4;
+    GtkWidget *about3;
+    GtkWidget *image64;
+    GtkWidget *separator3;
+    GtkWidget *quit;
+    GtkWidget *image65;
+
+    menu = gtk_menu_new ();
+
+    stop2 = gtk_image_menu_item_new_with_mnemonic (_("Stop"));
+    gtk_widget_show (stop2);
+    gtk_container_add (GTK_CONTAINER (menu), stop2);
+
+    image59 = gtk_image_new_from_stock ("media-playback-stop", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image59);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (stop2), image59);
+
+    play2 = gtk_image_menu_item_new_with_mnemonic (_("Play"));
+    gtk_widget_show (play2);
+    gtk_container_add (GTK_CONTAINER (menu), play2);
+
+    image60 = gtk_image_new_from_stock ("media-playback-start", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image60);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (play2), image60);
+
+    pause2 = gtk_image_menu_item_new_with_mnemonic (_("Pause"));
+    gtk_widget_show (pause2);
+    gtk_container_add (GTK_CONTAINER (menu), pause2);
+
+    image61 = gtk_image_new_from_stock ("media-playback-pause", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image61);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (pause2), image61);
+
+    previous2 = gtk_image_menu_item_new_with_mnemonic (_("Previous"));
+    gtk_widget_show (previous2);
+    gtk_container_add (GTK_CONTAINER (menu), previous2);
+
+    image62 = gtk_image_new_from_stock ("media-skip-backward", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image62);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (previous2), image62);
+
+    next2 = gtk_image_menu_item_new_with_mnemonic (_("Next"));
+    gtk_widget_show (next2);
+    gtk_container_add (GTK_CONTAINER (menu), next2);
+
+    image63 = gtk_image_new_from_stock ("media-skip-forward", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image63);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (next2), image63);
+
+    play_random1 = gtk_menu_item_new_with_mnemonic (_("Play Random"));
+    gtk_widget_show (play_random1);
+    gtk_container_add (GTK_CONTAINER (menu), play_random1);
+
+    separator4 = gtk_separator_menu_item_new ();
+    gtk_widget_show (separator4);
+    gtk_container_add (GTK_CONTAINER (menu), separator4);
+    gtk_widget_set_sensitive (separator4, FALSE);
+
+    about3 = gtk_image_menu_item_new_with_mnemonic (_("About"));
+    gtk_widget_show (about3);
+    gtk_container_add (GTK_CONTAINER (menu), about3);
+
+    image64 = gtk_image_new_from_stock ("help-about", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image64);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (about3), image64);
+
+    separator3 = gtk_separator_menu_item_new ();
+    gtk_widget_show (separator3);
+    gtk_container_add (GTK_CONTAINER (menu), separator3);
+    gtk_widget_set_sensitive (separator3, FALSE);
+
+    quit = gtk_image_menu_item_new_with_mnemonic (_("Quit"));
+    gtk_widget_show (quit);
+    gtk_container_add (GTK_CONTAINER (menu), quit);
+
+    image65 = gtk_image_new_from_stock ("application-exit", GTK_ICON_SIZE_MENU);
+    gtk_widget_show (image65);
+    gtk_image_menu_item_set_image (GTK_IMAGE_MENU_ITEM (quit), image65);
+
+    g_signal_connect ((gpointer) stop2, "activate",
+                      G_CALLBACK (on_stopbtn_clicked),
+                      NULL);
+    g_signal_connect ((gpointer) play2, "activate",
+                      G_CALLBACK (on_playbtn_clicked),
+                      NULL);
+    g_signal_connect ((gpointer) pause2, "activate",
+                      G_CALLBACK (on_pausebtn_clicked),
+                      NULL);
+    g_signal_connect ((gpointer) previous2, "activate",
+                      G_CALLBACK (on_prevbtn_clicked),
+                      NULL);
+    g_signal_connect ((gpointer) next2, "activate",
+                      G_CALLBACK (on_nextbtn_clicked),
+                      NULL);
+    g_signal_connect ((gpointer) play_random1, "activate",
+                      G_CALLBACK (on_playrand_clicked),
+                      NULL);
+    g_signal_connect ((gpointer) about3, "activate",
+                      G_CALLBACK (on_about1_activate),
+                      NULL);
+    g_signal_connect ((gpointer) quit, "activate",
+                      G_CALLBACK (on_quit_activate),
+                      NULL);
+
+    gtk_widget_show_all(menu);
+    return menu;
+}
+#else
+//GTKStatusIcon functions
+
+static gboolean
+gtkui_is_status_icon_allocated(void) {
+    return trayicon != NULL ? TRUE : FALSE;
+}
+
+void gtkui_set_status_icon_visible(gboolean visible) {
+    g_object_set (trayicon, "visible", visible, NULL);
+}
+
+void gtkui_initialize_status_icon(void) {
+#if !GTK_CHECK_VERSION(2,14,0)
+    g_signal_connect ((gpointer)trayicon, "activate", G_CALLBACK (on_trayicon_activate), NULL);
+#else
+    printf ("connecting button tray signals\n");
+    g_signal_connect ((gpointer)trayicon, "scroll_event", G_CALLBACK (on_trayicon_scroll_event), NULL);
+    g_signal_connect ((gpointer)trayicon, "button_press_event", G_CALLBACK (on_trayicon_button_press_event), NULL);
+#endif
+    g_signal_connect ((gpointer)trayicon, "popup_menu", G_CALLBACK (on_trayicon_popup_menu), NULL);
+}
+
+void gtkui_create_status_icon_from_file(const char *iconfile) {
+    trayicon = gtk_status_icon_new_from_file(iconfile);
+    gtkui_initialize_status_icon();
+}
+
+void gtkui_create_status_icon_from_icon_name(const char * icon_name) {
+    trayicon = gtk_status_icon_new_from_icon_name(icon_name);
+    gtkui_initialize_status_icon();
+}
+
+void gtkui_set_status_icon_tooltip(const char *text) {
+#if !GTK_CHECK_VERSION(2,16,0)
+        gtk_status_icon_set_tooltip (trayicon, text);
+#else
+        gtk_status_icon_set_tooltip_text (trayicon, text);
+#endif
+}
+
+GtkWidget*
+gtkui_create_status_menu (void) {
+    return create_traymenu();
+}
+#endif
+
 static gboolean
 gtkui_update_status_icon (gpointer unused) {
     int hide_tray_icon = deadbeef->conf_get_int ("gtkui.hide_tray_icon", 0);
-    if (hide_tray_icon && !trayicon) {
+    if (hide_tray_icon && !gtkui_is_status_icon_allocated()) {
         return FALSE;
     }
-    if (trayicon) {
+    if (gtkui_is_status_icon_allocated()) {
         if (hide_tray_icon) {
-            g_object_set (trayicon, "visible", FALSE, NULL);
+            gtkui_set_status_icon_visible(FALSE);
         }
         else {
-            g_object_set (trayicon, "visible", TRUE, NULL);
+            gtkui_set_status_icon_visible(TRUE);
         }
         return FALSE;
     }
     // system tray icon
-    traymenu = create_traymenu ();
+    traymenu = gtkui_create_status_menu();
 
     char tmp[1000];
     const char *icon_name = tmp;
@@ -542,23 +784,12 @@ gtkui_update_status_icon (gpointer unused) {
     if (!gtk_icon_theme_has_icon(theme, icon_name)) {
         char iconpath[1024];
         snprintf (iconpath, sizeof (iconpath), "%s/deadbeef.png", deadbeef->get_prefix ());
-        trayicon = gtk_status_icon_new_from_file(iconpath);
+        gtkui_create_status_icon_from_file(iconpath);
     }
     else {
-        trayicon = gtk_status_icon_new_from_icon_name(icon_name);
+        gtkui_create_status_icon_from_icon_name(icon_name);
     }
-    if (hide_tray_icon) {
-        g_object_set (trayicon, "visible", FALSE, NULL);
-    }
-
-#if !GTK_CHECK_VERSION(2,14,0)
-    g_signal_connect ((gpointer)trayicon, "activate", G_CALLBACK (on_trayicon_activate), NULL);
-#else
-    printf ("connecting button tray signals\n");
-    g_signal_connect ((gpointer)trayicon, "scroll_event", G_CALLBACK (on_trayicon_scroll_event), NULL);
-    g_signal_connect ((gpointer)trayicon, "button_press_event", G_CALLBACK (on_trayicon_button_press_event), NULL);
-#endif
-    g_signal_connect ((gpointer)trayicon, "popup_menu", G_CALLBACK (on_trayicon_popup_menu), NULL);
+    gtkui_set_status_icon_visible(hide_tray_icon ? FALSE : TRUE);
 
     gtkui_set_titlebar (NULL);
 
@@ -567,8 +798,8 @@ gtkui_update_status_icon (gpointer unused) {
 
 static void
 gtkui_hide_status_icon () {
-    if (trayicon) {
-        g_object_set (trayicon, "visible", FALSE, NULL);
+    if (gtkui_is_status_icon_allocated()) {
+        gtkui_set_status_icon_visible(FALSE);
     }
 }
 

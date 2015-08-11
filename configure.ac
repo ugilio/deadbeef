@@ -131,6 +131,7 @@ AC_ARG_ENABLE(wma, [AS_HELP_STRING([--enable-wma      ], [build WMA plugin (defa
 AC_ARG_ENABLE(pltbrowser, [AS_HELP_STRING([--enable-pltbrowser      ], [build playlist browser gui plugin (default: auto)])], [enable_pltbrowser=$enableval], [enable_pltbrowser=yes])
 AC_ARG_ENABLE(sc68, [AS_HELP_STRING([--enable-sc68     ], [build sc68 Atari ST and Amiga music player (default: auto)])], [enable_sc68=$enableval], [enable_sc68=yes])
 AC_ARG_ENABLE(abstract_socket, [AS_HELP_STRING([--enable-abstract-socket      ], [use abstract UNIX socket for IPC (default: disabled)])], [enable_abstract_socket=$enableval], [enable_abstract_socket=no])
+AC_ARG_ENABLE(appindicator, [AS_HELP_STRING([--enable-appindicator], [use libappindicator for tray icon (default: disabled)])], [enable_appindicator=$enableval], [enable_appindicator=no])
 
 AS_IF([test "${enable_staticlink}" != "no"], [
     AC_DEFINE_UNQUOTED([STATICLINK], [1], [Define if building static version])
@@ -210,6 +211,28 @@ AS_IF([test "${enable_staticlink}" != "no"], [
     AC_SUBST(ZIP_LIBS)
 ], [
     PKG_CHECK_MODULES(ZIP, libzip, HAVE_ZIP=yes, HAVE_ZIP=no)
+])
+
+AS_IF([test "${enable_gtk2}" = "yes" -o "${enable_gtk3}" = "yes"], [
+    AS_IF([test "${enable_appindicator}" = "yes"], [
+        AS_IF([test "${enable_staticlink}" != "no"], [
+            HAVE_APPINDICATOR1=yes
+            HAVE_APPINDICATOR3=yes
+        ], [
+            PKG_CHECK_MODULES(APPINDICATOR1, appindicator-0.1, HAVE_APPINDICATOR1=yes, HAVE_APPINDICATOR1=no)
+            PKG_CHECK_MODULES(APPINDICATOR3, appindicator3-0.1, HAVE_APPINDICATOR3=yes, HAVE_APPINDICATOR3=no)
+        ])
+    ], [
+        HAVE_APPINDICATOR1=no
+        HAVE_APPINDICATOR3=no
+    ])
+
+    AS_IF([test "${HAVE_APPINDICATOR1}" = "yes"], [
+        AC_DEFINE([USE_APPINDICATOR1], 1, [Using libappindicator for tray icon (GTK2)])
+    ])
+    AS_IF([test "${HAVE_APPINDICATOR3}" = "yes"], [
+        AC_DEFINE([USE_APPINDICATOR3], 1, [Using libappindicator for tray icon (GTK3)])
+    ])
 ])
 
 AS_IF([test "${enable_gtk3}" = "yes"], [
